@@ -1,0 +1,36 @@
+services:
+  escha-sglang:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: escha-sglang-server
+    restart: unless-stopped
+    ipc: host
+    environment:
+      - HOST=0.0.0.0
+      - HF_TOKEN=${HF_TOKEN:-}
+      - MODEL=/models/Qwen3.8-27B-Escha-W2
+      - SERVED_NAME=Qwen3.8-27B-Escha-W2
+      
+      # Single-user high-throughput optimization for RTX 3090
+      - ESCHA_ROUTE=blackwell
+      
+      # 131k Long-Context & VRAM Budget Profile (~21.8 GB peak)
+      - MEM=0.88
+      - CTXLEN=131072
+      - MAXREQ=1
+      - MAXMAMBA=2
+      - CHUNK=2048
+      - INT8=on
+    volumes:
+      - ./models:/models
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    ports:
+      - "8080:30000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

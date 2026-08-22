@@ -1,0 +1,30 @@
+# ── Model weights ─────────────────────────────────────────────
+# Large binary files — download via huggingface-cli, don't commit.
+models/
+
+# ── Secrets ───────────────────────────────────────────────────
+.env
+
+# ── Python ────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# ── Docker ────────────────────────────────────────────────────
+# Don't commit local compose overrides.
+docker-compose.override.yml
+
+# ── OS / Editor ───────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
