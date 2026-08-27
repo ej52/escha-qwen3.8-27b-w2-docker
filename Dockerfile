@@ -18,7 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git-lfs \
     curl \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* && \
+    git lfs install --skip-repo
 
 WORKDIR /workspace
 
@@ -33,6 +34,9 @@ RUN pip install --upgrade pip wheel && \
     pip install "huggingface_hub[cli]"
 
 # 4. Clone the runtime repository and install the wheel + full dependency closure
+#    Per INSTALL.md §4: `pip install ./escha-*.whl` pulls escha + sglang fork + 61 pinned deps
+#    (transformers>=5.8, flashinfer, xgrammar, etc.) — no separate sglang[srt] needed.
+#    Wheel is manylinux_2_28 cp312, ABI-linked to torch==2.9.*+cu128 (installed above).
 RUN git clone https://huggingface.co/EschaLabs/escha-runtime-qwen3dense /workspace/runtime && \
     cd /workspace/runtime/sglang && \
     pip install ./escha-*.whl

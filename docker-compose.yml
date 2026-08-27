@@ -12,10 +12,16 @@ services:
       - MODEL=/models/Qwen3.8-27B-Escha-W2
       - SERVED_NAME=Qwen3.8-27B-Escha-W2
       
-      # Single-user high-throughput optimization for RTX 3090
+      # Single-user high-throughput optimization for RTX 3090 (Ampere sm_86)
+      # Per INSTALL.md §"By compute capability": 3090 auto-selects lovelace, but blackwell is
+      # 1.72× faster at batch 1 (23.6→40.7 tok/s) and bit-identical. Ada/Hopper auto-select blackwell.
       - ESCHA_ROUTE=blackwell
+      # Blackwell consumer (sm_120: 5090/5060) requires ATTN_BACKEND=triton — leave empty on Ampere/Ada.
+      - ATTN_BACKEND=${ATTN_BACKEND:-}
       
-      # 131k Long-Context & VRAM Budget Profile (~21.8 GB peak)
+      # 131k Long-Context & VRAM Budget Profile (~21.8 GB peak, pool 141,431 tokens)
+      # Per INSTALL.md §"By VRAM" 24 GB row: validated long-context profile. For default
+      # 64k profile use MEM=0.72 CTXLEN=65536 MAXREQ=0 MAXMAMBA=0 (auto) and drop INT8=on.
       - MEM=0.88
       - CTXLEN=131072
       - MAXREQ=1
@@ -24,7 +30,7 @@ services:
       - INT8=on
     volumes:
       - ./models:/models
-      - ~/.cache/huggingface:/root/.cache/huggingface
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
     ports:
       - "8080:30000"
     deploy:
