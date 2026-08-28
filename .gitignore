@@ -1,5 +1,5 @@
 # ── Model weights ─────────────────────────────────────────────
-# Large binary files — download via huggingface-cli, don't commit.
+# Large binary files — download via `hf download`, don't commit.
 models/
 
 # ── Secrets ───────────────────────────────────────────────────
