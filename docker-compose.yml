@@ -1,38 +1,131 @@
+x-common-build: &common-build
+  build:
+    context: .
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  ipc: host
+  volumes:
+    - ./models:/models
+    - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+  ports:
+    - "8080:30000"
+
+# Unified compose with profiles — replaces docker-compose.tp2*.yml / vision.yml
+# Usage:
+#   docker compose up                                      # default: 1x 3090/4090 131k (single)
+#   docker compose --profile tp2 up escha-sglang-tp2       # 2x 3090 TP=2 131k (add --profile, specify service to avoid starting default)
+#   docker compose --profile tp2-fp8 up escha-sglang-tp2-fp8 # 2x 3090 TP=2 131k fp8 4 streams
+#   docker compose --profile vision up escha-sglang-vision # vision hybrid centraly/Qwen3.8-27B-Escha-W2-vision
+# Lean image: DOCKERFILE=Dockerfile.lean docker compose --profile tp2 up escha-sglang-tp2
+# Or set in .env: DOCKERFILE=Dockerfile.lean and use ${DOCKERFILE:-Dockerfile} below
+
 services:
+  # Default single-GPU 131k long-context (no profile → runs with plain `up`)
   escha-sglang:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    <<: *common-build
     container_name: escha-sglang-server
-    restart: unless-stopped
-    ipc: host
     environment:
       - HOST=0.0.0.0
       - HF_TOKEN=${HF_TOKEN:-}
       - MODEL=/models/Qwen3.8-27B-Escha-W2
       - SERVED_NAME=Qwen3.8-27B-Escha-W2
-      
-      # Single-user high-throughput optimization for RTX 3090 (Ampere sm_86)
-      # Per INSTALL.md §"By compute capability": 3090 auto-selects lovelace, but blackwell is
-      # 1.72× faster at batch 1 (23.6→40.7 tok/s) and bit-identical. Ada/Hopper auto-select blackwell.
       - ESCHA_ROUTE=blackwell
-      # Blackwell consumer (sm_120: 5090/5060) requires ATTN_BACKEND=triton — leave empty on Ampere/Ada.
       - ATTN_BACKEND=${ATTN_BACKEND:-}
-      
-      # 131k Long-Context & VRAM Budget Profile (~21.8 GB peak, pool 141,431 tokens)
-      # Per INSTALL.md §"By VRAM" 24 GB row: validated long-context profile. For default
-      # 64k profile use MEM=0.72 CTXLEN=65536 MAXREQ=0 MAXMAMBA=0 (auto) and drop INT8=on.
       - MEM=0.88
       - CTXLEN=131072
       - MAXREQ=1
       - MAXMAMBA=2
       - CHUNK=2048
+      - CUDA_GRAPH_BS=1 2 4 8 12 16
       - INT8=on
-    volumes:
-      - ./models:/models
-      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
-    ports:
-      - "8080:30000"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # TP=2 131k long-context for 2x RTX 3090 (48 GB total, Ampere sm_86)
+  # Per INSTALL.md 24GB long-context row; pool ~2x on TP=2, 131k fits with headroom
+  escha-sglang-tp2:
+    <<: *common-build
+    profiles: ["tp2"]
+    container_name: escha-sglang-server-tp2
+    command: ["bash", "serve.sh", "--tp-size", "2"]
+    environment:
+      - HOST=0.0.0.0
+      - HF_TOKEN=${HF_TOKEN:-}
+      - MODEL=/models/Qwen3.8-27B-Escha-W2
+      - SERVED_NAME=Qwen3.8-27B-Escha-W2
+      - ESCHA_ROUTE=blackwell
+      - ATTN_BACKEND=${ATTN_BACKEND:-}
+      - MEM=0.88
+      - CTXLEN=131072
+      - MAXREQ=1
+      - MAXMAMBA=2
+      - CHUNK=2048
+      - CUDA_GRAPH_BS=1 2 4 8 12 16
+      - INT8=on
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2
+              capabilities: [gpu]
+
+  # TP=2 131k with fp8 KV-cache (32 KiB/token vs 64 KiB fp16 → 2x pool, 4x131k streams)
+  # Per INSTALL.md fp8 buys context (unevaluated lossy), REPRO: TP=2 fp8 → 692k pool
+  escha-sglang-tp2-fp8:
+    <<: *common-build
+    profiles: ["tp2-fp8"]
+    container_name: escha-sglang-server-tp2-fp8
+    command: ["bash", "serve.sh", "--tp-size", "2", "--kv-cache-dtype", "fp8_e5m2"]
+    environment:
+      - HOST=0.0.0.0
+      - HF_TOKEN=${HF_TOKEN:-}
+      - MODEL=/models/Qwen3.8-27B-Escha-W2
+      - SERVED_NAME=Qwen3.8-27B-Escha-W2
+      - ESCHA_ROUTE=blackwell
+      - ATTN_BACKEND=${ATTN_BACKEND:-}
+      - MEM=0.88
+      - CTXLEN=131072
+      - MAXREQ=4
+      - MAXMAMBA=8
+      - CHUNK=2048
+      - CUDA_GRAPH_BS=1 2 4 8 12 16
+      - INT8=on
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 2
+              capabilities: [gpu]
+
+  # Vision hybrid centraly/Qwen3.8-27B-Escha-W2-vision (10.15GB lang + 0.92GB visual = 11.07GB)
+  # Requires SGLANG_VLM_TEXT_ONLY=0 + --enable-multimodal (see hybrid README)
+  escha-sglang-vision:
+    <<: *common-build
+    profiles: ["vision"]
+    container_name: escha-sglang-vision
+    command: ["bash", "serve.sh", "--enable-multimodal"]
+    environment:
+      - HOST=0.0.0.0
+      - HF_TOKEN=${HF_TOKEN:-}
+      - MODEL=/models/Qwen3.8-27B-Escha-W2-vision
+      - SERVED_NAME=Qwen3.8-27B-Escha-W2-vision
+      - SGLANG_VLM_TEXT_ONLY=0
+      - ESCHA_ROUTE=blackwell
+      - ATTN_BACKEND=${ATTN_BACKEND:-}
+      - MEM=0.88
+      - CTXLEN=131072
+      - MAXREQ=1
+      - MAXMAMBA=2
+      - CHUNK=2048
+      - CUDA_GRAPH_BS=1 2 4 8 12 16
+      - INT8=on
     deploy:
       resources:
         reservations:

@@ -58,13 +58,15 @@ cd escha-qwen3.8-27b-w2-docker
 ### 2 · Download the model weights
 
 ```bash
-pip install huggingface_hub[cli]
+pip install -U huggingface_hub[cli]  # provides `hf` (huggingface-cli is deprecated)
 
 # If the repo is gated, authenticate first:
-huggingface-cli login
+hf auth login
+# or: huggingface-cli login  # deprecated alias, still works but warns
 
-huggingface-cli download EschaLabs/Qwen3.8-27B-Escha-W2 \
+hf download EschaLabs/Qwen3.8-27B-Escha-W2 \
     --local-dir ./models/Qwen3.8-27B-Escha-W2
+# To update hf itself: hf update  # or: pip install -U huggingface_hub
 ```
 
 ### 3 · Configure your environment
